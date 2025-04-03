@@ -7,28 +7,31 @@ import os
 import tempfile
 import json
 
-# Authenticate Google Drive using Streamlit secrets if available
+# Authenticate Google Drive using Streamlit secrets or local file
 
 def authenticate_drive():
     try:
-        import streamlit as st
-        secrets_json = st.secrets.get("client_secrets_json", "").strip()
-        if not secrets_json:
-            raise ValueError("'client_secrets_json' not found or empty in Streamlit secrets")
+        secrets_json = None
 
-        json.loads(secrets_json)  # Validate format
+        try:
+            import streamlit as st
+            secrets_json = st.secrets.get("client_secrets_json", "").strip()
+        except Exception:
+            pass  # Not running in Streamlit or secrets missing
 
-        with open("client_secrets.json", "w") as f:
-            f.write(secrets_json)
+        if secrets_json:
+            json.loads(secrets_json)  # Validate format
+            with open("client_secrets.json", "w") as f:
+                f.write(secrets_json)
+        elif not os.path.exists("client_secrets.json"):
+            raise FileNotFoundError("client_secrets.json is missing and no secret provided via Streamlit.")
 
-    except ImportError:
-        print("Streamlit not available — skipping client_secrets.json write.")
     except Exception as e:
         try:
             import streamlit as st
-            st.error("❌ Google Drive authentication failed. Invalid or missing credentials.")
+            st.error("❌ Google Drive authentication failed. Missing or invalid credentials.")
         except:
-            print("❌ Google Drive authentication failed. Invalid or missing credentials.")
+            print("❌ Google Drive authentication failed. Missing or invalid credentials.")
         raise e
 
     gauth = GoogleAuth()
