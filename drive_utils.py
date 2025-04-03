@@ -1,74 +1,78 @@
-# drive_utils.py
+# drive_utils.py (refactored for service account authentication)
 import pandas as pd
 import io
-from pydrive.auth import GoogleAuth
-from pydrive.drive import GoogleDrive
 import os
-import tempfile
 import json
+import tempfile
+from googleapiclient.discovery import build
+from googleapiclient.http import MediaIoBaseDownload, MediaFileUpload
+from google.oauth2 import service_account
 import streamlit as st
 
-# Authenticate Google Drive using Streamlit Cloud secrets only
+SCOPES = ["https://www.googleapis.com/auth/drive"]
+SERVICE_ACCOUNT_FILE = "service_account.json"
+
+_drive_service = None
 
 def authenticate_drive():
+    global _drive_service
+    if _drive_service is not None:
+        return _drive_service
+
     try:
-        if "client_secrets_json" not in st.secrets:
-            raise ValueError("❌ 'client_secrets_json' not found in Streamlit secrets.")
+        if "gdrive_service_account" not in st.secrets:
+            raise ValueError("❌ 'gdrive_service_account' not found in Streamlit secrets.")
 
-        secrets_json = st.secrets["client_secrets_json"].strip()
-        if not secrets_json:
-            raise ValueError("❌ 'client_secrets_json' in Streamlit secrets is empty.")
+        service_account_info = json.loads(st.secrets["gdrive_service_account"])
+        with open(SERVICE_ACCOUNT_FILE, "w") as f:
+            json.dump(service_account_info, f)
 
-        json.loads(secrets_json)  # Validate format
-        with open("client_secrets.json", "w") as f:
-            f.write(secrets_json)
+        creds = service_account.Credentials.from_service_account_file(
+            SERVICE_ACCOUNT_FILE, scopes=SCOPES
+        )
+        _drive_service = build("drive", "v3", credentials=creds)
+        return _drive_service
 
     except Exception as e:
-        st.error("❌ Google Drive authentication failed. Missing or invalid Streamlit Cloud secret.")
+        st.error("❌ Google Drive service account authentication failed.")
         raise e
 
-    gauth = GoogleAuth()
-    gauth.LoadCredentialsFile("mycreds.txt")
-    if gauth.credentials is None:
-        gauth.CommandLineAuth()  # Headless mode for Streamlit Cloud
-    elif gauth.access_token_expired:
-        gauth.Refresh()
-    else:
-        gauth.Authorize()
-    gauth.SaveCredentialsFile("mycreds.txt")
-    return GoogleDrive(gauth)
-
-_drive_instance = None
-
-def get_drive():
-    global _drive_instance
-    if _drive_instance is None:
-        _drive_instance = authenticate_drive()
-    return _drive_instance
-
 def read_excel_from_drive(file_id):
-    file = get_drive().CreateFile({'id': file_id})
-    file.FetchMetadata()
-    file.GetContentFile('temp.xlsx')
-    return pd.read_excel('temp.xlsx', engine='openpyxl')
+    service = authenticate_drive()
+    request = service.files().get_media(fileId=file_id)
+    fh = io.BytesIO()
+    downloader = MediaIoBaseDownload(fh, request)
+    done = False
+    while not done:
+        status, done = downloader.next_chunk()
+    fh.seek(0)
+    return pd.read_excel(fh, engine='openpyxl')
 
 def read_csv_from_drive(file_id):
-    file = get_drive().CreateFile({'id': file_id})
-    file.FetchMetadata()
-    file.GetContentFile('temp.csv')
-    return pd.read_csv('temp.csv')
+    service = authenticate_drive()
+    request = service.files().get_media(fileId=file_id)
+    fh = io.BytesIO()
+    downloader = MediaIoBaseDownload(fh, request)
+    done = False
+    while not done:
+        status, done = downloader.next_chunk()
+    fh.seek(0)
+    return pd.read_csv(fh)
 
 def write_df_to_drive(df, file_id, file_type="csv"):
-    file = get_drive().CreateFile({'id': file_id})
+    service = authenticate_drive()
+    tmp_path = tempfile.NamedTemporaryFile(delete=False, suffix=f".{file_type}").name
 
     if file_type == "csv":
-        with tempfile.NamedTemporaryFile(delete=False, suffix=".csv", mode='w', encoding='utf-8') as tmp:
-            df.to_csv(tmp.name, index=False)
-            file.SetContentFile(tmp.name)
+        df.to_csv(tmp_path, index=False)
+        mime_type = "text/csv"
     elif file_type == "excel":
-        with tempfile.NamedTemporaryFile(delete=False, suffix=".xlsx") as tmp:
-            with pd.ExcelWriter(tmp.name, engine='openpyxl') as writer:
-                df.to_excel(writer, index=False)
-            file.SetContentFile(tmp.name)
+        with pd.ExcelWriter(tmp_path, engine='openpyxl') as writer:
+            df.to_excel(writer, index=False)
+        mime_type = "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet"
+    else:
+        raise ValueError("Unsupported file type")
 
-    file.Upload()
+    media = MediaFileUpload(tmp_path, mimetype=mime_type, resumable=True)
+    service.files().update(fileId=file_id, media_body=media).execute()
+    os.remove(tmp_path)
