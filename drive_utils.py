@@ -15,11 +15,12 @@ def authenticate_drive():
 
         try:
             import streamlit as st
-            secrets_json = st.secrets.get("client_secrets_json", "").strip()
+            if "client_secrets_json" in st.secrets:
+                secrets_json = st.secrets["client_secrets_json"].strip()
         except Exception:
             pass  # Not running in Streamlit or secrets missing
 
-        if secrets_json:
+        if secrets_json and secrets_json != "":
             json.loads(secrets_json)  # Validate format
             with open("client_secrets.json", "w") as f:
                 f.write(secrets_json)
