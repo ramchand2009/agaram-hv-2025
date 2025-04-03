@@ -30,7 +30,7 @@ def authenticate_drive():
     gauth = GoogleAuth()
     gauth.LoadCredentialsFile("mycreds.txt")
     if gauth.credentials is None:
-        gauth.LocalWebserverAuth()
+        gauth.CommandLineAuth()  # Headless mode for Streamlit Cloud
     elif gauth.access_token_expired:
         gauth.Refresh()
     else:
