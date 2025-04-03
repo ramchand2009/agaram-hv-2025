@@ -1,1 +1,6 @@
 streamlit
+pandas
+pillow
+openpyxl
+PyDrive
+gdown
