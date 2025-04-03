@@ -5,14 +5,31 @@ from pydrive.auth import GoogleAuth
 from pydrive.drive import GoogleDrive
 import os
 import tempfile
+import json
 
-# Authenticate Google Drive
-# In production, use streamlit's secrets to load client_secrets.json
+# Authenticate Google Drive using Streamlit secrets if available
 
 def authenticate_drive():
-    if not os.path.exists("client_secrets.json"):
+    try:
+        import streamlit as st
+        secrets_json = st.secrets.get("client_secrets_json", "").strip()
+        if not secrets_json:
+            raise ValueError("'client_secrets_json' not found or empty in Streamlit secrets")
+
+        json.loads(secrets_json)  # Validate format
+
         with open("client_secrets.json", "w") as f:
-            f.write(st.secrets["client_secrets_json"])
+            f.write(secrets_json)
+
+    except ImportError:
+        print("Streamlit not available — skipping client_secrets.json write.")
+    except Exception as e:
+        try:
+            import streamlit as st
+            st.error("❌ Google Drive authentication failed. Invalid or missing credentials.")
+        except:
+            print("❌ Google Drive authentication failed. Invalid or missing credentials.")
+        raise e
 
     gauth = GoogleAuth()
     gauth.LoadCredentialsFile("mycreds.txt")
