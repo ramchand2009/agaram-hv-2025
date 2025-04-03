@@ -6,7 +6,6 @@ from pydrive.drive import GoogleDrive
 import os
 import tempfile
 import json
-import json
 
 # Authenticate Google Drive using Streamlit secrets if available
 
@@ -43,22 +42,28 @@ def authenticate_drive():
     gauth.SaveCredentialsFile("mycreds.txt")
     return GoogleDrive(gauth)
 
-drive = authenticate_drive()
+_drive_instance = None
+
+def get_drive():
+    global _drive_instance
+    if _drive_instance is None:
+        _drive_instance = authenticate_drive()
+    return _drive_instance
 
 def read_excel_from_drive(file_id):
-    file = drive.CreateFile({'id': file_id})
+    file = get_drive().CreateFile({'id': file_id})
     file.FetchMetadata()
     file.GetContentFile('temp.xlsx')
     return pd.read_excel('temp.xlsx', engine='openpyxl')
 
 def read_csv_from_drive(file_id):
-    file = drive.CreateFile({'id': file_id})
+    file = get_drive().CreateFile({'id': file_id})
     file.FetchMetadata()
     file.GetContentFile('temp.csv')
     return pd.read_csv('temp.csv')
 
 def write_df_to_drive(df, file_id, file_type="csv"):
-    file = drive.CreateFile({'id': file_id})
+    file = get_drive().CreateFile({'id': file_id})
 
     if file_type == "csv":
         with tempfile.NamedTemporaryFile(delete=False, suffix=".csv", mode='w', encoding='utf-8') as tmp:
