@@ -61,18 +61,25 @@ def read_csv_from_drive(file_id):
 
 def write_df_to_drive(df, file_id, file_type="csv"):
     service = authenticate_drive()
-    tmp_path = tempfile.NamedTemporaryFile(delete=False, suffix=f".{file_type}").name
 
     if file_type == "csv":
+        tmp_path = tempfile.NamedTemporaryFile(delete=False, suffix=".csv").name
         df.to_csv(tmp_path, index=False)
         mime_type = "text/csv"
     elif file_type == "excel":
+        tmp_path = tempfile.NamedTemporaryFile(delete=False, suffix=".xlsx").name
         with pd.ExcelWriter(tmp_path, engine='openpyxl') as writer:
             df.to_excel(writer, index=False)
         mime_type = "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet"
     else:
         raise ValueError("Unsupported file type")
 
-    media = MediaFileUpload(tmp_path, mimetype=mime_type, resumable=True)
-    service.files().update(fileId=file_id, media_body=media).execute()
-    os.remove(tmp_path)
+    media = MediaFileUpload(tmp_path, mimetype=mime_type, resumable=False)
+
+    try:
+        service.files().update(fileId=file_id, media_body=media, body={}).execute()
+    except Exception as e:
+        st.error(f"❌ Failed to upload to Google Drive: {e}")
+        raise e
+    finally:
+        os.remove(tmp_path)
